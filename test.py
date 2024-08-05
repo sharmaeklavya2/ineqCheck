@@ -3,7 +3,7 @@
 import sys  # noqa
 import unittest
 from graph import DiGraph, sccDecomp
-from ineqCheck import Ineq, parseIneqs, processIneqs, stdizeIneqs
+from ineqCheck import getGroupedIneqs, Ineq, parseIneqs, processIneqs, stdizeIneqs
 
 
 class SccTest(unittest.TestCase):
@@ -21,32 +21,30 @@ class SccTest(unittest.TestCase):
 class IneqProcessTest(unittest.TestCase):
     def test1(self) -> None:
         ineqs = stdizeIneqs([Ineq('x', '<', 'y'), Ineq('x', '>', 'y')])
-        isValid, varGroups, newIneqs = processIneqs(ineqs)
-        self.assertFalse(isValid)
-        self.assertEqual(len(varGroups), 1)
-        self.assertEqual(len(newIneqs), 0)
+        output = processIneqs(ineqs)
+        self.assertFalse(output.consistent)
+        self.assertEqual(len(output.eqCs), 1)
 
     def test2(self) -> None:
         ineqs = stdizeIneqs([Ineq('x', '≤', 'y'), Ineq('x', '≥', 'y')])
-        isValid, varGroups, newIneqs = processIneqs(ineqs)
-        self.assertTrue(isValid)
-        self.assertEqual(len(varGroups), 1)
-        self.assertEqual(len(newIneqs), 0)
+        output = processIneqs(ineqs)
+        self.assertTrue(output.consistent)
+        self.assertEqual(len(output.eqCs), 1)
 
     def test3(self) -> None:
         ineqs = stdizeIneqs([Ineq('x', '<', 'y')])
-        isValid, varGroups, newIneqs = processIneqs(ineqs)
-        self.assertTrue(isValid)
-        self.assertEqual(len(varGroups), 2)
-        self.assertEqual(len(newIneqs), 1)
+        output = processIneqs(ineqs)
+        self.assertTrue(output.consistent)
+        self.assertEqual(len(output.eqCs), 2)
 
     def test4(self) -> None:
         ineqs = parseIneqs(['x ≤ y ≤ z ≤ x', 'x < a', 'a = b'])
-        isValid, varGroups, newIneqs = processIneqs(ineqs)
-        self.assertTrue(isValid)
-        self.assertEqual(len(varGroups), 2)
-        self.assertEqual(set(varGroups[0].names), set('xyz'))
-        self.assertEqual(set(varGroups[1].names), set('ab'))
+        output = processIneqs(ineqs)
+        self.assertTrue(output.consistent)
+        self.assertEqual(len(output.eqCs), 2)
+        self.assertEqual(set(output.eqCs[0]), set('xyz'))
+        self.assertEqual(set(output.eqCs[1]), set('ab'))
+        newIneqs = getGroupedIneqs(ineqs, output.varToEqC, output.eqCs)
         self.assertEqual(len(newIneqs), 1)
         rawIneq = (newIneqs[0].lhs.id, newIneqs[0].op, newIneqs[0].rhs.id)
         self.assertEqual(rawIneq, (0, '<', 1))

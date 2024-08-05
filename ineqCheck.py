@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
-import sys  # noqa
+import sys
 import argparse
 import re
-from collections.abc import Sequence
-from typing import Generic, Literal, NamedTuple, TypeVar
+from collections.abc import Mapping, Sequence
+from typing import Generic, Literal, NamedTuple, TextIO, TypeVar
 
 from graph import DiGraph, sccDecomp
 
@@ -62,7 +62,7 @@ def parseIneqs(lines: Sequence[str]) -> Sequence[Ineq[str]]:
             lhs, rawOp, rhs = parts2[2*i: 2*i+3]
             op: IneqType = rawOp  # type: ignore # explicit_cast(str, IneqType)
             ineqs.append(Ineq(lhs.strip(), op, rhs.strip()))
-    return stdizeIneqs(ineqs)
+    return ineqs
 
 
 # [ process ]===================================================================
@@ -79,44 +79,64 @@ def getIneqGraph(ineqs: Sequence[Ineq[T]]) -> DiGraph[T]:
         if rhs not in adj:
             adj[rhs] = []
             V.append(rhs)
-        if op in ('<', '≤'):
+        if op in ('<', '≤', '='):
             adj[lhs].append(rhs)
-        elif op == '=':
-            adj[lhs].append(rhs)
+        if op in ('>', '≥', '='):
             adj[rhs].append(lhs)
-        else:
-            raise ValueError('Ineq.op was {}'.format(repr(op)))
     return DiGraph(V, adj)
 
 
-def processIneqs(ineqs: Sequence[Ineq[T]]) -> tuple[bool,
-        Sequence[VarGroup[T]], Sequence[Ineq[VarGroup[T]]]]:
+class IneqProcessOutput(NamedTuple, Generic[T]):
+    consistent: bool
+    violatedIneqs: Sequence[Ineq[T]]
+    varToEqC: Mapping[T, int]
+    eqCs: Sequence[Sequence[T]]
+
+
+def processIneqs(ineqs: Sequence[Ineq[T]]) -> IneqProcessOutput[T]:
     G = getIneqGraph(ineqs)
     # print('G:', G, file=sys.stderr)
-    vToCC, CCs, G2 = sccDecomp(G)
-    # print('vToCC:', vToCC, file=sys.stderr)
-    # print('CCs:', CCs, file=sys.stderr)
-    # print('G2:', G2, file=sys.stderr)
+    varToEqC, eqCs, G2 = sccDecomp(G)
+    # print('G2:', output.G2, file=sys.stderr)
 
-    ineqDict: dict[tuple[int, int], bool] = {}  # True means strict inequality
-    isValid = True
+    violatedIneqs = []
     for ineq in ineqs:
         u, op, v = ineq.lhs, ineq.op, ineq.rhs
-        i, j, isStrict = vToCC[u], vToCC[v], (op == '<')
-        if i == j:
-            if isStrict:
-                isValid = False
-        else:
+        if varToEqC[u] == varToEqC[v] and op in ('<', '>'):
+            violatedIneqs.append(ineq)
+
+    return IneqProcessOutput(consistent=not violatedIneqs, violatedIneqs=violatedIneqs,
+        varToEqC=varToEqC, eqCs=eqCs)
+
+
+def getGroupedIneqs(ineqs: Sequence[Ineq[T]], varToEqC: Mapping[T, int], eqCs: Sequence[Sequence[T]]
+        ) -> Sequence[Ineq[VarGroup[T]]]:
+    ineqDict: dict[tuple[int, int], bool] = {}  # True means strict inequality
+    for ineq in ineqs:
+        ineq2 = stdizeIneq(ineq)
+        u, op, v = ineq2.lhs, ineq2.op, ineq2.rhs
+        i, j, isStrict = varToEqC[u], varToEqC[v], (op == '<')
+        if i != j:
             assert op != '='
             ineqDict[(i, j)] = isStrict or ineqDict.get((i, j), False)
 
-    varGroups = [VarGroup(i, tuple(vars)) for i, vars in enumerate(CCs)]
+    varGroups = [VarGroup(i, tuple(vars)) for i, vars in enumerate(eqCs)]
     newIneqs: list[Ineq[VarGroup[T]]] = []
     for ((i, j), isStrict) in ineqDict.items():
         lhs, op, rhs = varGroups[i], ('<' if isStrict else '≤'), varGroups[j]
         newIneqs.append(Ineq(lhs=lhs, op=op, rhs=rhs))
+    return newIneqs
 
-    return (isValid, varGroups, newIneqs)
+
+def printGroupedIneqs(ineqs: Sequence[Ineq[VarGroup[T]]], eqCs: Sequence[Sequence[T]], fp: TextIO) -> None:
+    seenEqCs = set()
+    for ineq in ineqs:
+        print(ineq, file=fp)
+        seenEqCs.add(ineq.lhs.id)
+        seenEqCs.add(ineq.rhs.id)
+    for i, eqC in enumerate(eqCs):
+        if len(eqC) > 1 and i not in seenEqCs:
+            print(' = '.join([str(x) for x in eqC]), file=fp)
 
 
 # [ main ]======================================================================
@@ -128,12 +148,18 @@ def main() -> None:
 
     with open(args.ipath) as fp:
         ineqs = parseIneqs(fp.readlines())
-    isValid, varGroups, ineqs2 = processIneqs(ineqs)
+    output = processIneqs(ineqs)
+    # print('varToEqC:', output.varToEqC, file=sys.stderr)
+    # print('eqCs:', output.eqCs, file=sys.stderr)
+    newIneqs = getGroupedIneqs(ineqs, output.varToEqC, output.eqCs)
 
-    if not isValid:
-        print('invalid inequalities')
-    for ineq in ineqs2:
-        print(ineq)
+    printGroupedIneqs(newIneqs, output.eqCs, sys.stdout)
+    if output.consistent:
+        print('inequalities are consistent')
+    else:
+        print('strictness violated for these inequalities:')
+        for ineq in output.violatedIneqs:
+            print(ineq)
 
 
 if __name__ == '__main__':
