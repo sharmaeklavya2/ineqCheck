@@ -18,9 +18,11 @@ class Ineq(NamedTuple, Generic[T]):
     lhs: T
     op: IneqType
     rhs: T
+    label: object = None
 
     def __str__(self) -> str:
-        return '{} {} {}'.format(self.lhs, self.op, self.rhs)
+        labelStr = str(self.label) + ': ' if self.label is not None else ''
+        return '{}{} {} {}'.format(labelStr, self.lhs, self.op, self.rhs)
 
 
 class VarGroup(NamedTuple, Generic[T]):
@@ -36,9 +38,9 @@ class VarGroup(NamedTuple, Generic[T]):
 
 def stdizeIneq(ineq: Ineq[T]) -> Ineq[T]:
     if ineq.op == '>':
-        return Ineq(ineq.rhs, '<', ineq.lhs)
+        return Ineq(ineq.rhs, '<', ineq.lhs, ineq.label)
     elif ineq.op == '≥':
-        return Ineq(ineq.rhs, '≤', ineq.lhs)
+        return Ineq(ineq.rhs, '≤', ineq.lhs, ineq.label)
     else:
         return ineq
 
@@ -55,13 +57,14 @@ def parseIneqs(lines: Sequence[str]) -> Sequence[Ineq[str]]:
             label, ineqChain = parts
         else:
             (ineqChain,) = parts
+            label = None
         del parts
         parts2 = re.split(r'([<≤=≥>])', ineqChain)
         n = len(parts2) // 2
         for i in range(n):
             lhs, rawOp, rhs = parts2[2*i: 2*i+3]
             op: IneqType = rawOp  # type: ignore # explicit_cast(str, IneqType)
-            ineqs.append(Ineq(lhs.strip(), op, rhs.strip()))
+            ineqs.append(Ineq(lhs.strip(), op, rhs.strip(), label))
     return ineqs
 
 
