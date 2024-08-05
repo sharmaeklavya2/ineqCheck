@@ -20,19 +20,19 @@ class SccTest(unittest.TestCase):
 
 class IneqProcessTest(unittest.TestCase):
     def test1(self) -> None:
-        ineqs = stdizeIneqs([Ineq('x', '<', 'y'), Ineq('x', '>', 'y')])
+        ineqs = stdizeIneqs([Ineq('x', '<', 'y', None), Ineq('x', '>', 'y', None)])
         output = processIneqs(ineqs)
         self.assertFalse(output.consistent)
         self.assertEqual(len(output.eqCs), 1)
 
     def test2(self) -> None:
-        ineqs = stdizeIneqs([Ineq('x', '≤', 'y'), Ineq('x', '≥', 'y')])
+        ineqs = stdizeIneqs([Ineq('x', '≤', 'y', None), Ineq('x', '≥', 'y', None)])
         output = processIneqs(ineqs)
         self.assertTrue(output.consistent)
         self.assertEqual(len(output.eqCs), 1)
 
     def test3(self) -> None:
-        ineqs = stdizeIneqs([Ineq('x', '<', 'y')])
+        ineqs = stdizeIneqs([Ineq('x', '<', 'y', None)])
         output = processIneqs(ineqs)
         self.assertTrue(output.consistent)
         self.assertEqual(len(output.eqCs), 2)

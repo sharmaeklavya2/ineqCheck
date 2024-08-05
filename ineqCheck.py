@@ -11,14 +11,15 @@ from graph import DiGraph, sccDecomp
 # [ Ineq ]======================================================================
 
 IneqType = Literal['<', '≤', '=', '≥', '>']
+LT = TypeVar('LT')
 T = TypeVar('T')
 
 
-class Ineq(NamedTuple, Generic[T]):
+class Ineq(NamedTuple, Generic[LT, T]):
     lhs: T
     op: IneqType
     rhs: T
-    label: object = None
+    label: LT
 
     def __str__(self) -> str:
         labelStr = str(self.label) + ': ' if self.label is not None else ''
@@ -36,7 +37,7 @@ class VarGroup(NamedTuple, Generic[T]):
         return '{}({}, {})'.format(self.__class__.__name__, self.id, self.names)
 
 
-def stdizeIneq(ineq: Ineq[T]) -> Ineq[T]:
+def stdizeIneq(ineq: Ineq[LT, T]) -> Ineq[LT, T]:
     if ineq.op == '>':
         return Ineq(ineq.rhs, '<', ineq.lhs, ineq.label)
     elif ineq.op == '≥':
@@ -45,12 +46,12 @@ def stdizeIneq(ineq: Ineq[T]) -> Ineq[T]:
         return ineq
 
 
-def stdizeIneqs(ineqs: Sequence[Ineq[T]]) -> Sequence[Ineq[T]]:
+def stdizeIneqs(ineqs: Sequence[Ineq[LT, T]]) -> Sequence[Ineq[LT, T]]:
     return [stdizeIneq(ineq) for ineq in ineqs]
 
 
-def parseIneqs(lines: Sequence[str]) -> Sequence[Ineq[str]]:
-    ineqs: list[Ineq[str]] = []
+def parseIneqs(lines: Sequence[str]) -> Sequence[Ineq[str | None, str]]:
+    ineqs: list[Ineq[str | None, str]] = []
     for line in lines:
         parts = line.split(':', maxsplit=1)
         if len(parts) == 2:
@@ -70,7 +71,7 @@ def parseIneqs(lines: Sequence[str]) -> Sequence[Ineq[str]]:
 
 # [ process ]===================================================================
 
-def getIneqGraph(ineqs: Sequence[Ineq[T]]) -> DiGraph[T]:
+def getIneqGraph(ineqs: Sequence[Ineq[LT, T]]) -> DiGraph[T]:
     # inequality u < v becomes edge (u, v)
     V: list[T] = []
     adj: dict[T, list[T]] = {}
@@ -89,14 +90,14 @@ def getIneqGraph(ineqs: Sequence[Ineq[T]]) -> DiGraph[T]:
     return DiGraph(V, adj)
 
 
-class IneqProcessOutput(NamedTuple, Generic[T]):
+class IneqProcessOutput(NamedTuple, Generic[LT, T]):
     consistent: bool
-    violatedIneqs: Sequence[Ineq[T]]
+    violatedIneqs: Sequence[Ineq[LT, T]]
     varToEqC: Mapping[T, int]
     eqCs: Sequence[Sequence[T]]
 
 
-def processIneqs(ineqs: Sequence[Ineq[T]]) -> IneqProcessOutput[T]:
+def processIneqs(ineqs: Sequence[Ineq[LT, T]]) -> IneqProcessOutput[LT, T]:
     G = getIneqGraph(ineqs)
     # print('G:', G, file=sys.stderr)
     varToEqC, eqCs, G2 = sccDecomp(G)
@@ -112,8 +113,8 @@ def processIneqs(ineqs: Sequence[Ineq[T]]) -> IneqProcessOutput[T]:
         varToEqC=varToEqC, eqCs=eqCs)
 
 
-def getGroupedIneqs(ineqs: Sequence[Ineq[T]], varToEqC: Mapping[T, int], eqCs: Sequence[Sequence[T]]
-        ) -> Sequence[Ineq[VarGroup[T]]]:
+def getGroupedIneqs(ineqs: Sequence[Ineq[LT, T]], varToEqC: Mapping[T, int], eqCs: Sequence[Sequence[T]]
+        ) -> Sequence[Ineq[None, VarGroup[T]]]:
     ineqDict: dict[tuple[int, int], bool] = {}  # True means strict inequality
     for ineq in ineqs:
         ineq2 = stdizeIneq(ineq)
@@ -124,14 +125,14 @@ def getGroupedIneqs(ineqs: Sequence[Ineq[T]], varToEqC: Mapping[T, int], eqCs: S
             ineqDict[(i, j)] = isStrict or ineqDict.get((i, j), False)
 
     varGroups = [VarGroup(i, tuple(vars)) for i, vars in enumerate(eqCs)]
-    newIneqs: list[Ineq[VarGroup[T]]] = []
+    newIneqs: list[Ineq[None, VarGroup[T]]] = []
     for ((i, j), isStrict) in ineqDict.items():
         lhs, op, rhs = varGroups[i], ('<' if isStrict else '≤'), varGroups[j]
-        newIneqs.append(Ineq(lhs=lhs, op=op, rhs=rhs))
+        newIneqs.append(Ineq(lhs=lhs, op=op, rhs=rhs, label=None))
     return newIneqs
 
 
-def printGroupedIneqs(ineqs: Sequence[Ineq[VarGroup[T]]], eqCs: Sequence[Sequence[T]], fp: TextIO) -> None:
+def printGroupedIneqs(ineqs: Sequence[Ineq[LT, VarGroup[T]]], eqCs: Sequence[Sequence[T]], fp: TextIO) -> None:
     seenEqCs = set()
     for ineq in ineqs:
         print(ineq, file=fp)
